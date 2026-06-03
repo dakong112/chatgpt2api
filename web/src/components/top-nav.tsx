@@ -66,10 +66,15 @@ export function TopNav() {
   const navItems = session.role === "admin" ? adminNavItems : userNavItems;
   const roleLabel = session.role === "admin" ? "管理员" : "普通用户";
   const displayName = session.name.trim() || roleLabel;
+  const isAdmin = session.role === "admin";
   const baseUrl = webConfig.apiUrl.replace(/\/$/, "") || window.location.origin;
   const canvasHref = `https://infinite-canvas-cpco.onrender.com?apiKey=${encodeURIComponent(session.key)}&baseUrl=${encodeURIComponent(baseUrl)}`;
+  // 无限画布暂时仅管理员可见
   const canvasItem = { href: canvasHref, label: "无限画布", external: true };
-  const allNavItems = [canvasItem, ...navItems.map((item) => ({ ...item, external: false }))];
+  const allNavItems = [
+    ...(isAdmin ? [canvasItem] : []),
+    ...navItems.map((item) => ({ ...item, external: false })),
+  ];
 
   return (
     <header className="border-b border-stone-100/50 dark:border-white/10">
@@ -121,14 +126,17 @@ export function TopNav() {
           <HeaderActions className="ml-auto sm:hidden" showGithubText={false} />
         </div>
         <nav className="hide-scrollbar -mx-1 hidden min-w-0 flex-1 gap-1 overflow-x-auto px-1 sm:mx-0 sm:flex sm:justify-center sm:gap-8 sm:overflow-visible sm:px-0">
-          <a
-            href={canvasHref}
-            target="_blank"
-            rel="noreferrer"
-            className="relative shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[13px] font-medium text-stone-500 transition hover:text-stone-900 sm:rounded-none sm:px-0 sm:text-[15px] dark:text-stone-400 dark:hover:text-stone-100"
-          >
-            无限画布
-          </a>
+          {/* 无限画布暂时仅管理员可见 */}
+          {isAdmin ? (
+            <a
+              href={canvasHref}
+              target="_blank"
+              rel="noreferrer"
+              className="relative shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[13px] font-medium text-stone-500 transition hover:text-stone-900 sm:rounded-none sm:px-0 sm:text-[15px] dark:text-stone-400 dark:hover:text-stone-100"
+            >
+              无限画布
+            </a>
+          ) : null}
           {navItems.map((item) => {
             const active = pathname === item.href;
             return (

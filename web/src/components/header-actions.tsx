@@ -8,6 +8,7 @@ export function HeaderActions({ className, showGithubText = true }: { className?
   return (
     <div className={cn("flex items-center gap-2 sm:gap-3", className)}>
       <ThemeToggle />
+      {/* 暂时隐藏作者 GitHub 外链
       <a
         href="https://github.com/basketikun/chatgpt2api"
         target="_blank"
@@ -18,6 +19,7 @@ export function HeaderActions({ className, showGithubText = true }: { className?
         <img src="/github.svg" alt="" className="size-4" />
         {showGithubText ? <span className="hidden sm:inline">GitHub</span> : null}
       </a>
+      */}
       <VersionReleaseDialog />
     </div>
   );

@@ -1,16 +1,11 @@
 {
-  "auth-key": "chatgpt2api",
+  "auth-key": "DI@2002329326",
   "refresh_account_interval_minute": 60,
   "image_retention_days": 15,
   "image_poll_timeout_secs": 120,
   "auto_remove_rate_limited_accounts": false,
   "auto_remove_invalid_accounts": true,
-  "log_levels": [
-    "debug",
-    "error",
-    "info",
-    "warning"
-  ],
+  "log_levels": ["debug", "error", "info", "warning"],
   "proxy": "",
   "base_url": "",
   "sensitive_words": [],

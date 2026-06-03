@@ -3,7 +3,8 @@
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+// Button 暂仅用于已隐藏的 GitHub 外链按钮
+// import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -95,11 +96,13 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
               </div>
             ))}
           </div>
+          {/* 暂时隐藏作者 GitHub 外链
           <Button variant="outline" size="sm" asChild>
             <a href="https://github.com/basketikun/chatgpt2api" target="_blank" rel="noreferrer">
               前往 GitHub 更新
             </a>
           </Button>
+          */}
         </DialogContent>
       </Dialog>
     </>
