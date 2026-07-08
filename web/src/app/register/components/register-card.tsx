@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, LoaderCircle, Plus, Play, RotateCcw, Save, Square, Trash2, UserPlus } from "lucide-react";
+import { AlertTriangle, GripVertical, LoaderCircle, Plus, Play, RotateCcw, Save, Square, Trash2, UserPlus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,7 +58,7 @@ export function RegisterCard() {
       ...(type === "gptmail" ? { api_key: "", default_domain: "" } : {}),
       ...(type === "yyds_mail" ? { api_base: "https://maliapi.215.im/v1", api_key: "", domain: [], subdomain: "", wildcard: false } : {}),
       ...(type === "ddg_mail" ? { ddg_token: "", cf_inbox_jwt: "", cf_domain: [], admin_password: "" } : {}),
-      ...(type === "outlook_token" ? { mailboxes: "", mode: "graph", imap_host: "outlook.office365.com", message_limit: 10 } : {}),
+      ...(type === "outlook_token" ? { mailboxes: "", mode: "graph", imap_host: "outlook.office365.com", message_limit: 10, import_field_order: ["email", "password", "client_id", "refresh_token"], import_separator: "----" } : {}),
     });
   };
 
@@ -296,22 +296,66 @@ export function RegisterCard() {
                               <Input value={String(provider.imap_host || "outlook.office365.com")} onChange={(event) => updateProvider(index, { imap_host: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
                             </div>
                           ) : null}
+                          {(() => {
+                            const FIELD_LABELS: Record<string, string> = { email: "邮箱", password: "密码", client_id: "client_id", refresh_token: "令牌" };
+                            const rawOrder = Array.isArray(provider.import_field_order) ? (provider.import_field_order as string[]) : [];
+                            const fieldOrder = rawOrder.length === 4 ? rawOrder : ["email", "password", "client_id", "refresh_token"];
+                            const separator = provider.import_separator !== undefined ? String(provider.import_separator) : "----";
+                            const reorder = (from: number, to: number) => {
+                              if (from === to || Number.isNaN(from)) return;
+                              const next = [...fieldOrder];
+                              const [moved] = next.splice(from, 1);
+                              next.splice(to, 0, moved);
+                              updateProvider(index, { import_field_order: next });
+                            };
+                            return (
+                              <>
+                                <div className="space-y-2">
+                                  <label className="text-sm text-stone-700">导入格式（拖动排序）</label>
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {fieldOrder.map((field, fieldIndex) => (
+                                      <span
+                                        key={field}
+                                        draggable={!config.enabled}
+                                        onDragStart={(event) => event.dataTransfer.setData("text/plain", String(fieldIndex))}
+                                        onDragOver={(event) => event.preventDefault()}
+                                        onDrop={(event) => { event.preventDefault(); reorder(Number(event.dataTransfer.getData("text/plain")), fieldIndex); }}
+                                        className="inline-flex cursor-grab select-none items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs text-stone-700 active:cursor-grabbing"
+                                      >
+                                        <GripVertical className="size-3 text-stone-400" />
+                                        {FIELD_LABELS[field] || field}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-sm text-stone-700">分隔符</label>
+                                  <Input value={separator} onChange={(event) => updateProvider(index, { import_separator: event.target.value })} placeholder="----" className="h-10 rounded-xl border-stone-200 bg-white font-mono" disabled={config.enabled} />
+                                </div>
+                              </>
+                            );
+                          })()}
                         </>
                       ) : null}
                     </div>
 
                     {type === "outlook_token" ? (() => {
+                      const FIELD_LABELS: Record<string, string> = { email: "邮箱", password: "密码", client_id: "client_id", refresh_token: "令牌" };
+                      const rawOrder = Array.isArray(provider.import_field_order) ? (provider.import_field_order as string[]) : [];
+                      const fieldOrder = rawOrder.length === 4 ? rawOrder : ["email", "password", "client_id", "refresh_token"];
+                      const sep = provider.import_separator !== undefined && String(provider.import_separator) !== "" ? String(provider.import_separator) : "----";
+                      const formatHint = fieldOrder.map((field) => FIELD_LABELS[field] || field).join(sep);
                       const stats = (provider.mailboxes_stats || {}) as Record<string, number>;
                       const savedCount = Number(provider.mailboxes_count || 0);
                       const preview = Array.isArray(provider.mailboxes_preview) ? (provider.mailboxes_preview as string[]) : [];
-                      const pendingCount = String(provider.mailboxes || "").split(/\r?\n/).filter((line) => line.includes("----") && line.split("----").length >= 4).length;
+                      const pendingCount = String(provider.mailboxes || "").split(/\r?\n/).filter((line) => line.includes(sep) && line.split(sep).length >= fieldOrder.length).length;
                       return (
                         <div className="space-y-2">
                           <label className="flex items-center justify-between text-sm text-stone-700">
                             <span>邮箱池导入 <span className="text-red-400">*</span></span>
                             <span className="text-xs text-stone-400">已保存 {savedCount} 个{pendingCount ? ` · 待导入 ${pendingCount} 个` : ""}</span>
                           </label>
-                          <Textarea value={String(provider.mailboxes || "")} onChange={(event) => updateProvider(index, { mailboxes: event.target.value })} placeholder={"每行一个邮箱，格式：\n邮箱----密码----client_id----refresh_token\n（出于安全，已保存的密码/refresh_token 不会回显；此处仅用于新增或覆盖）"} className="min-h-32 rounded-xl border-stone-200 bg-white font-mono text-xs" disabled={config.enabled} />
+                          <Textarea value={String(provider.mailboxes || "")} onChange={(event) => updateProvider(index, { mailboxes: event.target.value })} placeholder={`每行一个邮箱，按上方格式：\n${formatHint}\n（出于安全，已保存的密码/refresh_token 不会回显；此处仅用于新增或覆盖）`} className="min-h-32 rounded-xl border-stone-200 bg-white font-mono text-xs" disabled={config.enabled} />
                           <div className="flex flex-wrap items-center gap-1.5 text-xs">
                             <span className="rounded-md bg-stone-100 px-2 py-1 text-stone-600">未使用 {stats.unused ?? 0}</span>
                             <span className="rounded-md bg-blue-50 px-2 py-1 text-blue-600">占用中 {stats.in_use ?? 0}</span>

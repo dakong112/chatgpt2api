@@ -1132,29 +1132,59 @@ class OutlookTokenError(RuntimeError):
     """refresh_token 换取 access_token 失败（凭据失效/权限不对），与“读邮件失败”区分。"""
 
 
+def _outlook_graph_unavailable(error: Exception) -> bool:
+    """该 token 是否根本用不了 Graph（应用只授权了 IMAP/POP，未授予 Graph Mail.Read）。"""
+    text = str(error)
+    return "AADSTS70000" in text or "Graph 失败: HTTP 401" in text or "Graph 失败: HTTP 403" in text
+
+
 def _clean_outlook_value(value: str) -> str:
     return str(value or "").replace("﻿", "").replace(" ", " ").strip()
 
 
 def parse_outlook_credentials(text: str) -> list[dict[str, str]]:
-    """解析邮箱池文本，每行格式：email----password----client_id----refresh_token。"""
+    """解析已存邮箱池文本（内部标准格式）：email----password----client_id----refresh_token。"""
+    return parse_outlook_import(text, ["email", "password", "client_id", "refresh_token"], "----")
+
+
+OUTLOOK_IMPORT_FIELDS = ("email", "password", "client_id", "refresh_token")
+
+
+def parse_outlook_import(
+    text: str,
+    field_order: list[str] | tuple[str, ...] | None = None,
+    separator: str = "----",
+) -> list[dict[str, str]]:
+    """按用户自定义字段顺序 + 分隔符解析导入文本，返回标准 credential 列表。
+
+    field_order 示例 ["email","password","refresh_token","client_id"]（值为英文字段名，非显示名）；
+    separator 为用户手写分隔符（如 ":"、"----"、"|"），空则回退 "----"。
+    必须覆盖 email/client_id/refresh_token；password 可选。字段顺序非法时回退标准顺序。
+    ponytail: split 用 maxsplit=len-1，最后一个字段吞掉多余分隔符；若中间字段含分隔符会解析错，
+    让用户选一个不冲突的分隔符即可（refresh_token/client_id 通常不含 :、|、---- 等）。
+    """
+    order = [str(f) for f in (field_order or OUTLOOK_IMPORT_FIELDS)]
+    if len(order) != len(set(order)) or not {"email", "client_id", "refresh_token"} <= set(order):
+        order = list(OUTLOOK_IMPORT_FIELDS)
+    sep = separator if separator else "----"
     credentials: list[dict[str, str]] = []
     seen: set[str] = set()
     for raw_line in str(text or "").splitlines():
         line = _clean_outlook_value(raw_line)
-        if not line or "----" not in line:
+        if not line or sep not in line:
             continue
-        parts = [_clean_outlook_value(part) for part in line.split("----", 3)]
-        if len(parts) != 4:
+        parts = [_clean_outlook_value(part) for part in line.split(sep, len(order) - 1)]
+        if len(parts) != len(order):
             continue
-        email, password, client_id, refresh_token = parts
+        record = dict(zip(order, parts))
+        email, client_id, refresh_token = record.get("email", ""), record.get("client_id", ""), record.get("refresh_token", "")
         if "@" not in email or not client_id or not refresh_token:
             continue
         key = email.lower()
         if key in seen:
             continue
         seen.add(key)
-        credentials.append({"email": email, "password": password, "client_id": client_id, "refresh_token": refresh_token})
+        credentials.append({"email": email, "password": record.get("password", ""), "client_id": client_id, "refresh_token": refresh_token})
     return credentials
 
 
@@ -1379,15 +1409,20 @@ class OutlookTokenProvider(BaseMailProvider):
         if not client_id or not refresh_token:
             raise RuntimeError("OutlookToken mailbox 缺少 client_id 或 refresh_token")
         errors: list[str] = []
-        if self.mode in {"graph", "auto"}:
+        if self.mode in {"graph", "auto"} and not mailbox.get("_outlook_skip_graph"):
             try:
                 access_token = self._access_token(mailbox, client_id, refresh_token, OUTLOOK_GRAPH_SCOPE)
                 return self._graph_messages(mailbox, access_token)
             except Exception as error:
-                if self.mode == "graph":
+                # 只授权了 IMAP 的 outlook token（常见卖家格式）换 Graph scope 会报 AADSTS70000，
+                # 或 Graph 接口回 401/403。此类 token 用不了 Graph：记住并改走 IMAP，
+                # 即使用户在 UI 显式选了 Graph 也自愈，且后续轮询不再重复浪费失败调用。
+                if _outlook_graph_unavailable(error):
+                    mailbox["_outlook_skip_graph"] = True
+                elif self.mode == "graph":
                     raise
                 errors.append(f"graph: {error}")
-        if self.mode in {"imap", "auto"}:
+        if self.mode in {"imap", "auto"} or mailbox.get("_outlook_skip_graph"):
             try:
                 access_token = self._access_token(mailbox, client_id, refresh_token, OUTLOOK_IMAP_SCOPE)
                 return self._imap_messages(mailbox, access_token)
@@ -1532,7 +1567,10 @@ def mark_mailbox_result(mailbox: dict, *, success: bool, error: Exception | str 
         _set_outlook_token_state(address, "used")
         return
     reason = str(error or "").strip()
-    if isinstance(error, OutlookTokenError) or "OutlookToken 刷新失败" in reason or "access_token" in reason:
+    if "email_already_registered" in reason:
+        # 邮箱已在 OpenAI 建过号，永远无法再注册：标记为 used（已消费），避免被“清除失败”重置后反复重试再烧号。
+        _set_outlook_token_state(address, "used", reason[:300])
+    elif isinstance(error, OutlookTokenError) or "OutlookToken 刷新失败" in reason or "access_token" in reason:
         _set_outlook_token_state(address, "token_invalid", reason[:300])
     else:
         _set_outlook_token_state(address, "failed", reason[:300])

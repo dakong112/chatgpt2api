@@ -490,9 +490,12 @@ class PlatformRegistrar:
             status = getattr(resp, "status_code", "unknown")
             raise RuntimeError(error or f"platform_authorize_http_{status}{detail}, {debug}")
         landed = _authorize_landed_page(resp)
-        # 仅打日志，不据此中断：authorize 落地页无法可靠区分注册/登录，
-        # 真正的判定交给 user/register（失败会 dump 完整响应）。
         step(index, f"platform authorize 完成[{landed or '?'}] url={str(getattr(resp, 'url', '') or '')[:160]}")
+        # 实测（screen_hint=signup + login_hint）：全新邮箱落 /create-account/password，
+        # 已注册邮箱落 /log-in/password，信号可靠。落到登录分支说明该邮箱已在 OpenAI 建过号，
+        # 继续调 user/register 只会拿到 400 invalid_auth_step，直接快速失败并让上层标记为已消费。
+        if landed == "login":
+            raise RuntimeError("email_already_registered: 该邮箱已注册过 OpenAI 账号，无法再次注册，请更换全新邮箱")
 
     def _register_user(self, email: str, password: str, index: int) -> None:
         step(index, "开始提交注册密码")

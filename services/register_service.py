@@ -22,12 +22,15 @@ def _serialize_outlook_pool(credentials: list[dict]) -> str:
     )
 
 
-def _merge_outlook_pool(old_text: str, new_text: str) -> str:
-    """合并已存邮箱池与新导入文本，按邮箱去重，新导入的同名邮箱覆盖旧凭据。"""
+def _merge_outlook_pool(old_text: str, new_text: str, field_order: list | None = None, separator: str = "----") -> str:
+    """合并已存邮箱池与新导入文本，按邮箱去重，新导入的同名邮箱覆盖旧凭据。
+
+    old_text 永远是内部标准 ---- 格式；new_text 是用户按自定义 field_order/separator 粘贴的导入文本。
+    """
     merged: dict[str, dict] = {}
     for credential in mail_provider.parse_outlook_credentials(old_text or ""):
         merged[credential["email"].strip().lower()] = credential
-    for credential in mail_provider.parse_outlook_credentials(new_text or ""):
+    for credential in mail_provider.parse_outlook_import(new_text or "", field_order, separator):
         merged[credential["email"].strip().lower()] = credential
     return _serialize_outlook_pool(list(merged.values()))
 
@@ -151,7 +154,9 @@ class RegisterService:
             old = old_providers[index] if index < len(old_providers) and isinstance(old_providers[index], dict) else {}
             old_text = str(old.get("mailboxes") or "") if old.get("type") == "outlook_token" else ""
             new_text = str(provider.get("mailboxes") or "")
-            provider["mailboxes"] = _merge_outlook_pool(old_text, new_text) if (old_text or new_text) else ""
+            field_order = provider.get("import_field_order") if isinstance(provider.get("import_field_order"), list) else None
+            separator = str(provider.get("import_separator") or "----")
+            provider["mailboxes"] = _merge_outlook_pool(old_text, new_text, field_order, separator) if (old_text or new_text) else ""
             for key in ("mailboxes_count", "mailboxes_preview", "mailboxes_stats"):
                 provider.pop(key, None)
 

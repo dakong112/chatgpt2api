@@ -120,6 +120,23 @@ class RegisterProxyRuntimeTests(unittest.TestCase):
 
         self.assertFalse(openai_register._is_cloudflare_challenge(response))
 
+    def test_authorize_landing_on_login_means_email_already_registered(self):
+        # 全新邮箱 -> /create-account/password (signup)，已注册邮箱 -> /log-in/password (login)
+        signup = FakeResponse(status_code=200, headers={"content-type": "text/html"},
+                              url="https://auth.openai.com/create-account/password")
+        login = FakeResponse(status_code=200, headers={"content-type": "text/html"},
+                             url="https://auth.openai.com/log-in/password")
+        self.assertEqual(openai_register._authorize_landed_page(signup), "signup")
+        self.assertEqual(openai_register._authorize_landed_page(login), "login")
+
+        fake_proxy = FakeProxySettings(bundle=None)
+        with patch.object(openai_register, "proxy_settings", fake_proxy), patch.object(
+            openai_register, "create_session", return_value=FakeSession(),
+        ), patch.object(openai_register, "request_with_local_retry", return_value=(login, "")):
+            registrar = openai_register.PlatformRegistrar(proxy="")
+            with self.assertRaisesRegex(RuntimeError, "email_already_registered"):
+                registrar._platform_authorize("used@outlook.com", 1)
+
     def test_cloudflare_challenge_refreshes_clearance_and_retries_once_with_matching_headers(self):
         bundle = ClearanceBundle(
             target_host="auth.openai.com",
