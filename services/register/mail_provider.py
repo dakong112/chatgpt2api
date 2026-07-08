@@ -1447,8 +1447,17 @@ class OutlookTokenProvider(BaseMailProvider):
         seen_refs = {str(item) for item in seen_value}
 
         deadline = time.monotonic() + self.conf["wait_timeout"]
+        last_error = ""
         while time.monotonic() < deadline:
-            for message in self.fetch_recent_messages(mailbox):
+            try:
+                messages = self.fetch_recent_messages(mailbox)
+            except Exception as error:
+                # 轮询期间的瞬时错误（住宅代理抖动 / TLS WRONG_VERSION_NUMBER / 限流）不该终结整个注册：
+                # 此时账号已创建，下一轮重试通常就能读到验证码。记住最后一次错误，超时时再上报。
+                last_error = str(error)
+                time.sleep(max(0.2, self.conf["wait_interval"]))
+                continue
+            for message in messages:
                 if _message_before_code_boundary(mailbox, message):
                     continue
                 ref = _message_tracking_ref(message)
@@ -1460,6 +1469,8 @@ class OutlookTokenProvider(BaseMailProvider):
                     return code
                 seen_refs.add(ref)
             time.sleep(max(0.2, self.conf["wait_interval"]))
+        if last_error:
+            raise RuntimeError(f"等待验证码期间读取邮箱持续失败: {last_error}")
         return None
 
 

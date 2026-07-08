@@ -36,5 +36,45 @@ class OutlookImportParseTests(unittest.TestCase):
         self.assertIn("new@outlook.com----pw1----CID1----RTOK1", merged)
 
 
+class WaitForCodeResilienceTests(unittest.TestCase):
+    def _provider(self, wait_timeout=5.0):
+        entry = {"type": "outlook_token", "enable": True, "mode": "imap", "mailboxes": []}
+        conf = {"request_timeout": 30, "wait_timeout": wait_timeout, "wait_interval": 0, "user_agent": "UA", "proxy": ""}
+        return mail_provider.OutlookTokenProvider(entry, conf)
+
+    def test_transient_fetch_error_then_code(self):
+        # 第一轮读邮箱抛瞬时错误（代理抖动），下一轮拿到验证码 -> 不该中断，应返回 code
+        prov = self._provider()
+        calls = {"n": 0}
+        msg = {"provider": "outlook_token", "mailbox": "x", "message_id": "m1",
+               "subject": "", "text_content": "Your verification code is 123456", "html_content": ""}
+
+        def flaky(_mailbox):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("curl (35) TLS WRONG_VERSION_NUMBER")
+            return [msg]
+
+        prov.fetch_recent_messages = flaky
+        try:
+            self.assertEqual(prov.wait_for_code({}), "123456")
+            self.assertGreaterEqual(calls["n"], 2)
+        finally:
+            prov.close()
+
+    def test_persistent_fetch_error_raises_with_reason(self):
+        prov = self._provider(wait_timeout=0.4)
+
+        def always_fail(_mailbox):
+            raise RuntimeError("curl (35) TLS WRONG_VERSION_NUMBER")
+
+        prov.fetch_recent_messages = always_fail
+        try:
+            with self.assertRaisesRegex(RuntimeError, "读取邮箱持续失败"):
+                prov.wait_for_code({})
+        finally:
+            prov.close()
+
+
 if __name__ == "__main__":
     unittest.main()
